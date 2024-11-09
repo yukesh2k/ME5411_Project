@@ -1,4 +1,4 @@
-DISPLAY_TASK = 6;
+DISPLAY_TASK = 7;
 
 disp('Task 1: ');
 image = imread('charact2.bmp');
@@ -54,44 +54,42 @@ end
 
 disp('Task 3: ');
 
-image_gray = image(:, :, 2);
+image_gray = rgb2gray(image);
 
 [M, N] = size(image_gray); 
-    
-FT_img = fft2(double(image_gray)); 
-  
-threshold_freq = 0.5; 
-  
-u = 0:(M-1); 
-idx = find(u>M/2); 
-u(idx) = u(idx)-M; 
-v = 0:(N-1); 
-idy = find(v>N/2); 
-v(idy) = v(idy)-N; 
-  
-[V, U] = meshgrid(v, u); 
-  
-D = sqrt(U.^2+V.^2); 
-  
-H = double(D > threshold_freq); 
-  
-G = H.*FT_img; 
 
-image_high_pass_filtered = real(ifft2(double(G)));
+FT_img = fft2(double(image_gray), M, N); 
+
+threshold_freq = 2; 
+
+u = 0:(M-1);
+v = 0:(N-1);
+idx = find(u>M/2);
+u(idx) = u(idx)-M;
+idy = find(v>N/2);
+v(idy) = v(idy)-N;
+[V,U] = meshgrid(v,u);
+D = sqrt(U.^2+V.^2);
+
+k = 1; % k = 2 is original
+H = 1 - exp(-(D.^2) / (k * (threshold_freq^2))); % modified
+
+image_filtered = adapthisteq(uint8(ifft2(H.*FT_img)));
 
 if (DISPLAY_TASK == 3)
-
     figure;
     subplot(1, 2, 1), imshow(image_gray), title('Original');
-    subplot(1, 2, 2), imshow(image_high_pass_filtered, [ ]), title('High Pass Filter');
+    subplot(1, 2, 2), imshow(image_filtered, []), title('High Pass Filter');
 
 end
 
+image = image_filtered;
+
 disp('Task 4');
-[height, width] = size(image_high_pass_filtered);
+[height, width] = size(image);
 midpoint = round(height)/2;
 
-sub_image = image_high_pass_filtered(midpoint+1:end, :);
+sub_image = image(midpoint+1:end, :);
 
 if (DISPLAY_TASK == 4)
     figure;
@@ -113,3 +111,38 @@ if (DISPLAY_TASK == 6)
     figure;
     subplot(1, 1, 1), imshow(outline_image);
 end
+
+disp('Task 7');
+
+se = strel('disk', 1);  % Structuring element for erosion (adjust size if needed)
+erodedImage = imerode(binary_image, se);
+
+minSize = 300;
+cleanedImage = bwareaopen(erodedImage, minSize);
+
+[labeledImage, numObjects] = bwlabel(cleanedImage);
+
+stats = regionprops(labeledImage, 'BoundingBox', 'Centroid');
+
+figure;
+imshow(cleanedImage);
+title('Original Image with Labeled Components');
+hold on;
+
+for k = 1 : numObjects
+    % Get the bounding box for each character
+    thisBoundingBox = stats(k).BoundingBox;
+    thisCentroid = stats(k).Centroid;
+    
+    % Draw a rectangle around each character
+    rectangle('Position', thisBoundingBox, 'EdgeColor', 'r', 'LineWidth', 1);
+    
+    % Label the character with the index number at the centroid
+    text(thisCentroid(1), thisCentroid(2), sprintf('%d', k), ...
+        'Color', 'yellow', 'FontSize', 12, 'FontWeight', 'bold');
+end
+hold off;
+
+figure;
+imshow(cleanedImage);
+title('Cleaned Binary Image (Segmented)');
