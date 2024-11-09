@@ -1,4 +1,4 @@
-DISPLAY_TASK = 7;
+DISPLAY_TASK = 8;
 
 disp('Task 1: ');
 image = imread('charact2.bmp');
@@ -124,25 +124,102 @@ cleanedImage = bwareaopen(erodedImage, minSize);
 
 stats = regionprops(labeledImage, 'BoundingBox', 'Centroid');
 
-figure;
-imshow(cleanedImage);
-title('Original Image with Labeled Components');
-hold on;
+if (DISPLAY_TASK == 7)
+    figure;
+    imshow(~cleanedImage);
+    title('Original Image with Labeled Components');
+    hold on;
+end
+
+character_image_array = zeros(128, 128, numObjects);
 
 for k = 1 : numObjects
     % Get the bounding box for each character
     thisBoundingBox = stats(k).BoundingBox;
     thisCentroid = stats(k).Centroid;
-    
+
     % Draw a rectangle around each character
     rectangle('Position', thisBoundingBox, 'EdgeColor', 'r', 'LineWidth', 1);
-    
+
     % Label the character with the index number at the centroid
     text(thisCentroid(1), thisCentroid(2), sprintf('%d', k), ...
         'Color', 'yellow', 'FontSize', 12, 'FontWeight', 'bold');
-end
-hold off;
 
-figure;
-imshow(cleanedImage);
-title('Cleaned Binary Image (Segmented)');
+    croppedCharacter = ~imcrop(cleanedImage, thisBoundingBox);
+    character_image_array(:, :, k) = imresize(croppedCharacter, [128 128]);
+    if (DISPLAY_TASK == 7)
+        figure;
+        imshow(character_image_array(:, :, k));
+        title('Cleaned Binary Image (Segmented)');
+    end
+
+end
+
+if (DISPLAY_TASK == 7)
+    hold off;
+    figure;
+    imshow(~cleanedImage);
+    title('Cleaned Binary Image (Segmented)');
+end
+
+
+% Task 1: CNN
+
+trainDir = 'dataset/train';
+testDir = 'dataset/test';
+trainDS = imageDatastore(trainDir, 'IncludeSubfolders', true, 'LabelSource', 'foldernames');
+testDS = imageDatastore(testDir, 'IncludeSubfolders', true, 'LabelSource', 'foldernames');
+
+layers = [
+    % Input Layer
+    imageInputLayer([128 128 1], 'Name', 'input', 'Normalization', 'none')
+
+    % First Convolutional Block
+    convolution2dLayer(5, 32, 'Padding', 'same', 'Stride', 1, 'Name', 'conv1')
+    batchNormalizationLayer('Name', 'batchNorm1')
+    reluLayer('Name', 'relu1')
+    maxPooling2dLayer(2, 'Stride', 2, 'Name', 'maxPool1')
+
+    % Second Convolutional Block
+    convolution2dLayer(3, 64, 'Padding', 'same', 'Stride', 1, 'Name', 'conv2')
+    batchNormalizationLayer('Name', 'batchNorm2')
+    reluLayer('Name', 'relu2')
+    maxPooling2dLayer(2, 'Stride', 2, 'Name', 'maxPool2')
+
+    % Third Convolutional Block
+    convolution2dLayer(3, 128, 'Padding', 'same', 'Stride', 1, 'Name', 'conv3')
+    batchNormalizationLayer('Name', 'batchNorm3')
+    reluLayer('Name', 'relu3')
+    maxPooling2dLayer(2, 'Stride', 2, 'Name', 'maxPool3')
+
+    % Fully Connected Layer
+    fullyConnectedLayer(256, 'Name', 'fc1')
+    reluLayer('Name', 'relu_fc1')
+
+    % Dropout Layer
+    dropoutLayer(0.5, 'Name', 'dropout')
+
+    % Output Layer
+    fullyConnectedLayer(length(unique(trainDS.Labels)), 'Name', 'fc2')
+    softmaxLayer('Name', 'softmax')
+];
+
+options = trainingOptions('sgdm', ...
+    'MaxEpochs', 20, ...
+    'Shuffle', 'every-epoch', ...
+    'Verbose', true, ...
+    'CheckpointPath', checkpointPath, ...
+    'CheckpointFrequency', 5, ...
+    'Plots', 'training-progress' ...
+    );
+
+disp('Training CNN now: ');
+
+% net = trainnet(trainDS, layers, "crossentropy", options);
+checkpoint = load('./ckpt/net_checkpoint__620__2024_11_10__00_19_29.mat');
+net = checkpoint.net;
+
+disp('Testing CNN now: ');
+
+accuracy = testnet(net,testDS,"accuracy");
+fprintf("Accuracy: %f\n", accuracy);
